@@ -24,7 +24,8 @@ import { isDesktop } from '@/utils/ModelUtil'
 import { isMobile } from '@/utils/utils'
 import { useI18n } from '@/hooks/web/useI18n'
 const dvMainStore = dvMainStoreWithOut()
-const { pcMatrixCount, curComponent, mobileInPc, canvasState, inMobile } = storeToRefs(dvMainStore)
+const { pcMatrixCount, curComponent, mobileInPc, canvasState, inMobile, lastRuntimeVarChange } =
+  storeToRefs(dvMainStore)
 const openHandler = ref(null)
 const customDatasetParamsRef = ref(null)
 const emits = defineEmits(['onResetLayout'])
@@ -137,6 +138,55 @@ const renderReady = ref(false)
 const dashboardActive = computed(() => {
   return dvInfo.value.type === 'dashboard'
 })
+
+// 交互变量：仅 dataV 预览态使用（编辑态忽略条件）
+const runtimeVars = computed(() => dvMainStore.getRuntimeVars(dvInfo.value.id))
+// 记录上一次已打印的（componentId -> at），避免 finalShow 频繁执行导致刷屏
+const lastShowLogAtMap = new Map<string, number>()
+const finalShow = item => {
+  if (!item?.isShow) return false
+  // 仅 dataV 预览态生效（MVP）：包含编辑器预览 edit-preview
+  if (dvInfo.value.type !== 'dataV' || !showPosition.value.includes('preview')) return true
+  const dc = item?.displayCondition
+  if (!dc?.enabled || !dc?.varKey) return true
+  const v = runtimeVars.value?.[dc.varKey]
+  if (v === undefined) {
+    const res = (dc.emptyAs || 'hide') === 'show'
+    const last = lastRuntimeVarChange.value
+    if (last && last.dvId === dvInfo.value.id + '' && last.key === dc.varKey) {
+      const prevAt = lastShowLogAtMap.get(item.id)
+      if (prevAt !== last.at) {
+        lastShowLogAtMap.set(item.id, last.at)
+        console.info('[DE][runtimeVar][finalShow]', {
+          componentId: item.id,
+          varKey: dc.varKey,
+          value: undefined,
+          emptyAs: dc.emptyAs || 'hide',
+          result: res,
+          lastChange: last
+        })
+      }
+    }
+    return res
+  }
+  // 变量固定为 bool，规则固定为 true 显示
+  const res = v === true
+  const last = lastRuntimeVarChange.value
+  if (last && last.dvId === dvInfo.value.id + '' && last.key === dc.varKey) {
+    const prevAt = lastShowLogAtMap.get(item.id)
+    if (prevAt !== last.at) {
+      lastShowLogAtMap.set(item.id, last.at)
+      console.info('[DE][runtimeVar][finalShow]', {
+        componentId: item.id,
+        varKey: dc.varKey,
+        value: v,
+        result: res,
+        lastChange: last
+      })
+    }
+  }
+  return res
+}
 const state = reactive({
   initState: true,
   scrollMain: 0
@@ -214,7 +264,8 @@ const canvasStyle = computed(() => {
 const getDownloadStatusMainHeightV2 = () => {
   if (!previewCanvas.value?.childNodes) {
     nextTick(() => {
-      canvasStyle.value.height = getDownloadStatusMainHeight()
+      // canvasStyle 为 computed，历史代码会在下载态写入 height；此处仅做类型兼容
+      ;(canvasStyle.value as any).height = getDownloadStatusMainHeight()
     })
     return '100%'
   }
@@ -244,7 +295,8 @@ const getDownloadStatusMainHeightV2 = () => {
 const getDownloadStatusMainHeight = () => {
   if (!previewCanvas.value?.childNodes) {
     nextTick(() => {
-      canvasStyle.value.height = getDownloadStatusMainHeight()
+      // canvasStyle 为 computed，历史代码会在下载态写入 height；此处仅做类型兼容
+      ;(canvasStyle.value as any).height = getDownloadStatusMainHeight()
     })
     return '100%'
   }
@@ -582,7 +634,7 @@ defineExpose({
     <template v-if="renderReady && !showUnpublishFlag">
       <component-wrapper
         v-for="(item, index) in baseComponentData"
-        v-show="item.isShow"
+        v-show="finalShow(item)"
         :active="item.id === (curComponent || {})['id']"
         :canvas-id="canvasId"
         :canvas-style-data="canvasStyleData"

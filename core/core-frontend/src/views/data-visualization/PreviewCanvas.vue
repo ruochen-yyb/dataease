@@ -146,6 +146,10 @@ const loadCanvasDataAsync = async (dvId, dvType, ignoreParams = false) => {
       state.canvasDataPreview = canvasDataResult
       state.canvasStylePreview = canvasStyleResult
       state.canvasViewInfoPreview = canvasViewInfoPreview
+      // 交互变量默认值：仅 dataV 预览启用（MVP）
+      if (dvType === 'dataV') {
+        dvMainStore.initRuntimeVars(dvId, canvasStyleResult?.runtimeBoolVarsDefault || {})
+      }
       if (state.editPreview) {
         state.dvInfo.status = 1
       }

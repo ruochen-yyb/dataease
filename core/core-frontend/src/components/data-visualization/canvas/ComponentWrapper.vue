@@ -16,6 +16,7 @@ import { XpackComponent } from '@/components/plugin'
 import DePreviewPopDialog from '@/components/visualization/DePreviewPopDialog.vue'
 import Icon from '../../icon-custom/src/Icon.vue'
 import replaceOutlined from '@/assets/svg/icon_replace_outlined.svg'
+import icon_close_outlined from '@/assets/svg/icon_close_outlined.svg'
 import { CommonBackground } from '@/components/visualization/component-background/Types'
 import { ShorthandMode } from '@/Types'
 
@@ -358,12 +359,34 @@ const onWrapperClickCur = e => {
 }
 
 const onWrapperClick = e => {
-  if (eventEnable.value && !['edit-preview'].includes(showPosition.value)) {
+  if (eventEnable.value) {
+    // 编辑器预览态仅放开“交互变量”类事件，避免跳转/下载等副作用影响编辑体验
+    const editPreviewOnlyAllowSetVar =
+      showPosition.value === 'edit-preview' && config.value?.events?.type !== 'setVar'
+    if (editPreviewOnlyAllowSetVar) {
+      return
+    }
     if (config.value.events.type === 'showHidden') {
       // 打开弹框区域
       nextTick(() => {
         dvMainStore.popAreaActiveSwitch()
       })
+    } else if (config.value.events.type === 'setVar') {
+      // 交互变量（bool）：默认取反
+      const { varKey, op, value } = config.value.events?.setVar || {}
+      if (!varKey) {
+        console.warn('[DE][runtimeVar][setVar] missing varKey', {
+          dvId: dvInfo.value.id,
+          componentId: config.value?.id,
+          component: config.value?.component,
+          innerType: config.value?.innerType
+        })
+      }
+      if (op === 'set') {
+        dvMainStore.setRuntimeVar(dvInfo.value.id, varKey, !!value, 'setVar:set')
+      } else {
+        dvMainStore.toggleRuntimeVar(dvInfo.value.id, varKey, 'setVar:toggle')
+      }
     } else if (config.value.events.type === 'jump') {
       const url = config.value.events.jump.value
       const jumpType = config.value.events.jump.type
@@ -397,6 +420,22 @@ const onWrapperClick = e => {
     }
     e?.preventDefault()
     e?.stopPropagation()
+  }
+}
+
+// 右上角关闭按钮：变量控制显隐开启且当前显示时出现，点击取反对应变量
+const showCloseBtn = computed(() => {
+  if (dvInfo.value.type !== 'dataV') return false
+  if (!showPosition.value.includes('preview')) return false
+  const dc = config.value?.displayCondition
+  return !!(dc?.enabled && dc?.varKey && (dc.showClose === undefined || dc.showClose))
+})
+const onCloseBtnClick = e => {
+  e?.preventDefault?.()
+  e?.stopPropagation?.()
+  const dc = config.value?.displayCondition
+  if (dc?.enabled && dc?.varKey) {
+    dvMainStore.toggleRuntimeVar(dvInfo.value.id, dc.varKey, 'closeBtn:toggle')
   }
 }
 
@@ -461,6 +500,13 @@ const updateFromMobile = (e, type) => {
     element-loading-text="导出中..."
     element-loading-background="rgba(255, 255, 255, 1)"
   >
+    <div v-if="showCloseBtn" class="wrapper-close-btn" @click="onCloseBtnClick">
+      <el-tooltip effect="dark" :content="$t('visualization.close')" placement="bottom">
+        <el-icon>
+          <Icon name="icon_close_outlined"><icon_close_outlined class="svg-icon" /></Icon>
+        </el-icon>
+      </el-tooltip>
+    </div>
     <div
       :title="$t('visualization.sync_pc_design')"
       v-if="showCheck"
@@ -555,6 +601,24 @@ const updateFromMobile = (e, type) => {
 }
 .wrapper-outer {
   position: absolute;
+  .wrapper-close-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 12;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    cursor: pointer;
+    &:hover {
+      background: rgba(0, 0, 0, 0.5);
+    }
+  }
   .refresh-from-pc {
     position: absolute;
     right: 38px;

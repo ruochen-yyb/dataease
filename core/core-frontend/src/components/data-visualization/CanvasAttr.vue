@@ -3,8 +3,8 @@ import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
 import { storeToRefs } from 'pinia'
-import { nextTick, onMounted, ref } from 'vue'
-import { ElFormItem, ElIcon } from 'element-plus-secondary'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { ElFormItem, ElIcon, ElMessage } from 'element-plus-secondary'
 
 import { merge, cloneDeep } from 'lodash-es'
 import { useEmitt } from '@/hooks/web/useEmitt'
@@ -19,7 +19,7 @@ import ValueFormatterSetting from '@/components/dashboard/subject-setting/dashbo
 import { formatterViewInfo } from '@/views/chart/components/js/formatter'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
-const { canvasStyleData, canvasViewInfo } = storeToRefs(dvMainStore)
+const { canvasStyleData, canvasViewInfo, componentData, dvInfo } = storeToRefs(dvMainStore)
 let canvasAttrInit = false
 
 const canvasAttrActiveNames = ref(['size', 'baseSetting', 'background', 'color'])
@@ -35,6 +35,120 @@ const init = () => {
   nextTick(() => {
     canvasAttrInit = true
   })
+}
+
+// ===== 交互变量默认值（bool）=====
+/**
+ * 兼容旧数据：初始化画布级「交互变量默认值」容器。
+ * 注意：不要在 computed 中做赋值（会触发 eslint: vue/no-side-effects-in-computed-properties）
+ */
+const ensureRuntimeVarsDefault = () => {
+  if (!canvasStyleData.value.runtimeBoolVarsDefault) {
+    canvasStyleData.value.runtimeBoolVarsDefault = {}
+  }
+}
+watch(
+  () => canvasStyleData.value?.runtimeBoolVarsDefault,
+  v => {
+    if (!v) ensureRuntimeVarsDefault()
+  },
+  { immediate: true }
+)
+const runtimeVarsDefault = computed(
+  () => (canvasStyleData.value.runtimeBoolVarsDefault || {}) as Record<string, boolean>
+)
+const runtimeVarKeys = computed(() => Object.keys(runtimeVarsDefault.value))
+/**
+ * UI 输入态：用于编辑变量名（避免直接绑定到 key 导致不可编辑/回显异常）
+ */
+const runtimeVarNameDraft = ref<Record<string, string>>({})
+watch(
+  runtimeVarKeys,
+  keys => {
+    keys.forEach(k => {
+      if (runtimeVarNameDraft.value[k] === undefined) {
+        runtimeVarNameDraft.value[k] = k
+      }
+    })
+  },
+  { immediate: true }
+)
+
+const addRuntimeVar = () => {
+  const keyBase = 'flag'
+  let i = 1
+  let key = keyBase
+  while (runtimeVarsDefault.value[key] !== undefined) {
+    key = `${keyBase}${i++}`
+  }
+  runtimeVarsDefault.value[key] = false
+  runtimeVarNameDraft.value[key] = key
+  snapshotStore.recordSnapshotCache('canvasChange')
+}
+const removeRuntimeVar = (key: string) => {
+  delete runtimeVarsDefault.value[key]
+  delete runtimeVarNameDraft.value[key]
+  snapshotStore.recordSnapshotCache('canvasChange')
+}
+/**
+ * 重命名全局变量：
+ * - 更新画布默认值
+ * - 同步更新所有组件引用（显隐/事件）
+ * - 同步更新当前 dvId 的运行时变量池（用于编辑器预览立即生效）
+ */
+const renameRuntimeVar = (oldKey: string, newKey: string) => {
+  const nk = (newKey || '').trim()
+  if (!nk) {
+    ElMessage.warning('变量名不能为空')
+    runtimeVarNameDraft.value[oldKey] = oldKey
+    return null
+  }
+  if (nk === oldKey) return oldKey
+  if (runtimeVarsDefault.value[nk] !== undefined) {
+    ElMessage.warning('变量名已存在')
+    runtimeVarNameDraft.value[oldKey] = oldKey
+    return null
+  }
+  const val = runtimeVarsDefault.value[oldKey]
+  delete runtimeVarsDefault.value[oldKey]
+  runtimeVarsDefault.value[nk] = !!val
+
+  // 更新组件引用：displayCondition.varKey / events.setVar.varKey
+  const updateBindings = (arr?: any[]) => {
+    if (!arr) return
+    arr.forEach(com => {
+      if (com?.displayCondition?.varKey === oldKey) {
+        com.displayCondition.varKey = nk
+      }
+      if (com?.events?.setVar?.varKey === oldKey) {
+        com.events.setVar.varKey = nk
+      }
+      if (com?.component === 'Group') {
+        updateBindings(com?.propValue)
+      } else if (com?.component === 'DeTabs') {
+        com?.propValue?.forEach(tabItem => updateBindings(tabItem?.componentData))
+      }
+    })
+  }
+  updateBindings(componentData.value)
+
+  // 更新运行时变量池（编辑器预览/预览态立即生效）
+  const vars = dvMainStore.getRuntimeVars(dvInfo.value.id)
+  if (vars && Object.prototype.hasOwnProperty.call(vars, oldKey)) {
+    vars[nk] = !!vars[oldKey]
+    delete vars[oldKey]
+  }
+
+  // 更新输入态 key
+  delete runtimeVarNameDraft.value[oldKey]
+  runtimeVarNameDraft.value[nk] = nk
+  snapshotStore.recordSnapshotCache('canvasChange')
+  return nk
+}
+
+const commitRenameRuntimeVar = (oldKey: string) => {
+  const draft = runtimeVarNameDraft.value[oldKey]
+  renameRuntimeVar(oldKey, draft)
 }
 
 const onFormatterItemChange = val => {
@@ -201,6 +315,56 @@ onMounted(() => {
         class="no-padding no-border-bottom"
       >
         <senior-style-setting themes="dark"></senior-style-setting>
+      </el-collapse-item>
+
+      <!-- 交互变量默认值（MVP: bool，dataV 预览使用） -->
+      <el-collapse-item
+        effect="dark"
+        :title="t('visualization.runtime_vars_default')"
+        name="runtimeVars"
+      >
+        <div style="padding-bottom: 8px">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 8px;
+            "
+          >
+            <span style="font-size: 12px; color: #fff">{{
+              t('visualization.runtime_vars_default_tips')
+            }}</span>
+            <el-button type="primary" size="small" @click="addRuntimeVar">
+              {{ t('commons.add') }}
+            </el-button>
+          </div>
+          <div v-if="runtimeVarKeys.length === 0" style="font-size: 12px; opacity: 0.7">
+            {{ t('visualization.runtime_vars_empty') }}
+          </div>
+          <div
+            v-for="k in runtimeVarKeys"
+            :key="k"
+            style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px"
+          >
+            <el-input
+              size="small"
+              effect="dark"
+              v-model="runtimeVarNameDraft[k]"
+              @blur="() => commitRenameRuntimeVar(k)"
+              @keyup.enter="() => commitRenameRuntimeVar(k)"
+              style="flex: 1"
+            />
+            <el-switch
+              v-model="runtimeVarsDefault[k]"
+              size="small"
+              @change="() => snapshotStore.recordSnapshotCache('canvasChange')"
+            />
+            <el-button size="small" type="danger" @click="removeRuntimeVar(k)">
+              {{ t('commons.delete') }}
+            </el-button>
+          </div>
+        </div>
       </el-collapse-item>
     </el-collapse>
   </div>

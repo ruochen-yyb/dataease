@@ -29,6 +29,27 @@ import { filterEnumParams, filterEnumParamsReduce } from '@/utils/componentUtils
 import { formatterItem } from '@/views/chart/components/js/formatter'
 const { t } = useI18n()
 
+/**
+ * 交互变量调试开关：
+ * - 默认仅在 dev 模式打印（避免生产环境刷屏）
+ * - 如需强制开启，可在浏览器控制台执行：window.__DE_DEBUG_VARS__ = true
+ */
+const runtimeVarDebugEnabled = () => {
+  try {
+    // eslint-disable-next-line no-undef
+    const w: any = window
+    if (w?.__DE_DEBUG_VARS__ === true) return true
+  } catch (e) {
+    // ignore
+  }
+  try {
+    // 兼容非 vite 环境
+    return !!(import.meta as any)?.env?.DEV
+  } catch (e) {
+    return false
+  }
+}
+
 export const dvMainStore = defineStore('dataVisualization', {
   state: () => {
     return {
@@ -201,10 +222,94 @@ export const dvMainStore = defineStore('dataVisualization', {
       mainScrollTop: 0, //主画布运动量
       isIframe: false, // 当前是否在iframe中
       isPopWindow: false, // 当前是否在iframe弹框中
-      viewPageInfo: {} //表格分页信息
+      viewPageInfo: {}, //表格分页信息
+      // ===== 交互变量（运行时）=====
+      // - 以 dvId 为作用域全局共享
+      // - 仅用于预览态交互（编辑态忽略），不落库
+      runtimeVarsByDvId: {} as Record<string, Record<string, boolean>>,
+      /**
+       * 最近一次运行时变量变更（用于预览层精准打印显隐判定，不刷屏）
+       */
+      lastRuntimeVarChange: null as null | {
+        dvId: string
+        key: string
+        prev: boolean | undefined
+        next: boolean
+        source: string
+        at: number
+      }
     }
   },
   actions: {
+    /**
+     * 获取当前 dvId 的运行时变量对象（响应式）
+     */
+    getRuntimeVars(dvId = this.dvInfo.id) {
+      const id = dvId + ''
+      if (!this.runtimeVarsByDvId[id]) {
+        // pinia state 动态 key 同样具备响应式能力
+        this.runtimeVarsByDvId[id] = {}
+      }
+      return this.runtimeVarsByDvId[id]
+    },
+    /**
+     * 初始化运行时变量默认值（仅补缺，不覆盖用户交互产生的值）
+     */
+    initRuntimeVars(dvId = this.dvInfo.id, defaults: Record<string, boolean> = {}) {
+      const vars = this.getRuntimeVars(dvId)
+      if (!defaults) return
+      Object.keys(defaults).forEach(key => {
+        if (vars[key] === undefined) {
+          const next = !!defaults[key]
+          vars[key] = next
+          if (runtimeVarDebugEnabled()) {
+            console.info('[DE][runtimeVar][init]', { dvId: dvId + '', key, next })
+          }
+        }
+      })
+    },
+    /**
+     * 设置变量值（bool）
+     */
+    setRuntimeVar(dvId = this.dvInfo.id, key: string, value: boolean, source = 'setVar:set') {
+      if (!key) return
+      const vars = this.getRuntimeVars(dvId)
+      const prev = vars[key]
+      const next = !!value
+      vars[key] = next
+      this.lastRuntimeVarChange = {
+        dvId: dvId + '',
+        key,
+        prev,
+        next,
+        source,
+        at: Date.now()
+      }
+      if (runtimeVarDebugEnabled()) {
+        console.info('[DE][runtimeVar][set]', this.lastRuntimeVarChange)
+      }
+    },
+    /**
+     * 取反变量值（bool）
+     */
+    toggleRuntimeVar(dvId = this.dvInfo.id, key: string, source = 'setVar:toggle') {
+      if (!key) return
+      const vars = this.getRuntimeVars(dvId)
+      const prev = vars[key]
+      const next = !vars[key]
+      vars[key] = next
+      this.lastRuntimeVarChange = {
+        dvId: dvId + '',
+        key,
+        prev,
+        next,
+        source,
+        at: Date.now()
+      }
+      if (runtimeVarDebugEnabled()) {
+        console.info('[DE][runtimeVar][toggle]', this.lastRuntimeVarChange)
+      }
+    },
     setLastHiddenComponent(value?) {
       if (value) {
         this.lastHiddenComponent = [value]

@@ -29,6 +29,8 @@
     "types"
   ],
   "exclude": [
+    // ts:check 默认不允许 JS 文件；src 下存在少量历史 .js 文件，排除以避免 TS6504
+    "src/**/*.js",
     "dist",
     "lib",
     "node_modules",

@@ -269,6 +269,13 @@ export function historyItemAdaptor(
 
   componentItem.events['jump'].type = componentItem.events['jump'].type || '_blank'
   componentItem['category'] = componentItem['category'] || 'base'
+  // 变量控制显隐（MVP: bool 变量，变量为 true 显示）
+  componentItem['displayCondition'] = componentItem['displayCondition'] || {
+    enabled: false,
+    varKey: '',
+    emptyAs: 'hide',
+    showClose: true
+  }
 
   if (componentItem.component === 'DeTabs') {
     componentItem['titleBackground'] =
@@ -340,6 +347,8 @@ export function historyAdaptor(
       : canvasStyleResult['popupButtonAvailable'] //兼容弹框区域按钮开关
   canvasStyleResult['dialogBackgroundColor'] = canvasStyleResult['dialogBackgroundColor'] || '#fff'
   canvasStyleResult['dialogButton'] = canvasStyleResult['dialogButton'] || '#020408'
+  // 交互变量（bool）默认值（大屏预览使用）
+  canvasStyleResult['runtimeBoolVarsDefault'] = canvasStyleResult['runtimeBoolVarsDefault'] || {}
 
   canvasStyleResult['component']['formatterItem'] =
     canvasStyleResult['component']['formatterItem'] || deepCopy(formatterItem)

@@ -33,6 +33,8 @@ export const BASE_EVENTS = {
     { key: 'share', label: 'share' },
     { key: 'fullScreen', label: 'fullScreen' },
     { key: 'showHidden', label: 'showHidden' },
+    // 内部交互变量：用于控制组件显隐等场景（MVP: bool 变量，默认取反）
+    { key: 'setVar', label: 'setVar' },
     { key: 'refreshDataV', label: 'refreshDataV' },
     { key: 'refreshView', label: 'refreshView' }
   ],
@@ -47,6 +49,14 @@ export const BASE_EVENTS = {
     value: true
   },
   showHidden: {
+    value: true
+  },
+  // 设置交互变量（bool）
+  // - toggle: 取反
+  // - set: 设为指定值
+  setVar: {
+    varKey: '',
+    op: 'toggle', // 'toggle' | 'set'
     value: true
   },
   refreshDataV: {
@@ -241,6 +251,13 @@ export const commonAttr = {
   isShow: true, // 是否显示组件
   dashboardHidden: false, // 仪表板组件隐藏
   category: 'base', //组件类型 base 基础组件 hidden隐藏组件
+  // 变量控制显隐（MVP: bool 变量，变量为 true 显示；编辑态忽略，仅预览态生效）
+  displayCondition: {
+    enabled: false,
+    varKey: '',
+    emptyAs: 'hide', // 'show' | 'hide'；变量缺失时策略
+    showClose: true // 显示时右上角“关闭”按钮（点击取反变量）
+  },
   // 当前组件动作
   dragging: false,
   resizing: false,
