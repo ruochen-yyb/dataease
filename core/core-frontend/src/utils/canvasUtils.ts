@@ -269,12 +269,42 @@ export function historyItemAdaptor(
 
   componentItem.events['jump'].type = componentItem.events['jump'].type || '_blank'
   componentItem['category'] = componentItem['category'] || 'base'
-  // 变量控制显隐（MVP: bool 变量，变量为 true 显示）
+  // 显隐条件：兼容旧的交互变量显隐，并补齐动态数据条件结构
   componentItem['displayCondition'] = componentItem['displayCondition'] || {
     enabled: false,
+    sourceType: 'runtimeVar',
     varKey: '',
     emptyAs: 'hide',
-    showClose: true
+    showClose: true,
+    dataset: {
+      sourceViewId: '',
+      fieldId: '',
+      fieldName: '',
+      fieldKey: '',
+      rowIndex: 0,
+      aggregate: 'first',
+      operator: 'eq',
+      valueType: 'string',
+      compareValue: ''
+    }
+  }
+  componentItem['displayCondition'].sourceType =
+    componentItem['displayCondition'].sourceType || 'runtimeVar'
+  componentItem['displayCondition'].emptyAs = componentItem['displayCondition'].emptyAs || 'hide'
+  if (componentItem['displayCondition'].showClose === undefined) {
+    componentItem['displayCondition'].showClose = true
+  }
+  componentItem['displayCondition'].dataset = {
+    sourceViewId: '',
+    fieldId: '',
+    fieldName: '',
+    fieldKey: '',
+    rowIndex: 0,
+    aggregate: 'first',
+    operator: 'eq',
+    valueType: 'string',
+    compareValue: '',
+    ...(componentItem['displayCondition'].dataset || {})
   }
 
   if (componentItem.component === 'DeTabs') {

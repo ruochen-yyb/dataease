@@ -80,6 +80,7 @@ const { element, isEdit, showPosition, canvasStyleData, canvasViewInfo, dvInfo, 
     :ref="'dashboardPreview'"
     :dv-info="dvInfo"
     :element="element"
+    :canvas-style-data="canvasStyleData"
     :search-count="searchCount"
     :prop-value="element.propValue"
     :show-position="showPosition"

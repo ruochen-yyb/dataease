@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, toRefs } from 'vue'
+import { computed, nextTick, onMounted, ref, toRefs, watch } from 'vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import ComponentPosition from '@/components/visualization/common/ComponentPosition.vue'
@@ -11,8 +11,10 @@ import CommonStyleSet from '@/custom-component/common/CommonStyleSet.vue'
 import CommonEvent from '@/custom-component/common/CommonEvent.vue'
 import CarouselSetting from '@/custom-component/common/CarouselSetting.vue'
 import CommonBorderSetting from '@/custom-component/common/CommonBorderSetting.vue'
+import DisplayConditionSetting from '@/custom-component/common/DisplayConditionSetting.vue'
 import CollapseSwitchItem from '../../components/collapse-switch-item/src/CollapseSwitchItem.vue'
 import TabBackgroundOverall from '@/custom-component/de-tabs/TabBackgroundOverall.vue'
+import { normalizeDisplayCondition } from '@/utils/visibilityCondition'
 const snapshotStore = snapshotStoreWithOut()
 
 const { t } = useI18n()
@@ -37,9 +39,18 @@ const props = withDefaults(
 
 const { themes, element } = toRefs(props)
 const dvMainStore = dvMainStoreWithOut()
-const { dvInfo, batchOptStatus, mobileInPc, componentData, canvasStyleData } =
-  storeToRefs(dvMainStore)
+const { dvInfo, batchOptStatus, mobileInPc } = storeToRefs(dvMainStore)
 const activeName = ref(element.value.collapseName)
+
+watch(
+  () => element.value,
+  value => {
+    if (value) {
+      normalizeDisplayCondition(value)
+    }
+  },
+  { immediate: true }
+)
 
 const onChange = () => {
   element.value.collapseName = activeName
@@ -93,52 +104,8 @@ const eventsShow = computed(() => {
   )
 })
 
-// -------- 变量控制显隐（仅预览态生效；编辑态用于配置）--------
-// 兼容旧数据：补齐默认结构，避免 UI 报错
-onMounted(() => {
-  if (!element.value.displayCondition) {
-    element.value.displayCondition = {
-      enabled: false,
-      varKey: '',
-      emptyAs: 'hide',
-      showClose: true
-    }
-  } else {
-    element.value.displayCondition.enabled = !!element.value.displayCondition.enabled
-    element.value.displayCondition.varKey = element.value.displayCondition.varKey || ''
-    element.value.displayCondition.emptyAs = element.value.displayCondition.emptyAs || 'hide'
-    if (element.value.displayCondition.showClose === undefined) {
-      element.value.displayCondition.showClose = true
-    }
-  }
-})
-
-// 从页面引用的变量名中生成下拉候选（允许自由输入）
-const varKeyOptions = computed(() => {
-  const keys = new Set<string>()
-  // 画布全局默认变量
-  const globalVars = canvasStyleData.value?.runtimeBoolVarsDefault || {}
-  Object.keys(globalVars).forEach(k => keys.add(k))
-  const walk = (arr?: any[]) => {
-    if (!arr) return
-    arr.forEach(com => {
-      const dcKey = com?.displayCondition?.varKey
-      if (dcKey) keys.add(dcKey)
-      const evKey = com?.events?.setVar?.varKey
-      if (evKey) keys.add(evKey)
-      if (com?.component === 'Group') {
-        walk(com?.propValue)
-      } else if (com?.component === 'DeTabs') {
-        com?.propValue?.forEach(tabItem => walk(tabItem?.componentData))
-      }
-    })
-  }
-  walk(componentData.value)
-  return Array.from(keys).sort()
-})
-
 const onDisplayConditionChange = () => {
-  // 记录快照，保证配置可保存（编辑态不生效，预览态生效）
+  // 记录快照，保证显隐条件配置可保存。
   snapshotStore.recordSnapshotCacheToMobile('displayCondition')
   emits('onAttrChange', { custom: 'displayCondition' })
 }
@@ -230,7 +197,7 @@ onMounted(() => {
         :title="t('visualization.title_background')"
         name="titleBackground"
         v-model="element.titleBackground.enable"
-        @modelChange="val => onTitleBackgroundEnableChange(val)"
+        @modelChange="onTitleBackgroundEnableChange"
         v-if="element && titleBackgroundShow"
       >
         <tab-background-overall
@@ -279,62 +246,20 @@ onMounted(() => {
         <common-event :themes="themes" :events-info="element.events"></common-event>
       </el-collapse-item>
 
-      <!-- 显隐（变量控制）：变量为 true 显示；编辑态仅配置，预览态生效 -->
+      <!-- 显隐条件：支持交互变量和动态数据，编辑态仅配置，预览态生效 -->
       <collapse-switch-item
         v-model="element.displayCondition.enabled"
         @modelChange="onDisplayConditionChange"
         :themes="themes"
-        :title="t('visualization.visibility_by_var')"
+        :title="t('visualization.visibility_condition')"
         name="displayCondition"
         class="common-style-area"
       >
-        <el-form label-position="top">
-          <el-form-item class="form-item" :class="'form-item-' + themes" style="margin-bottom: 8px">
-            <span style="display: inline-block; margin-bottom: 6px">{{
-              t('visualization.var_name')
-            }}</span>
-            <el-select
-              v-model="element.displayCondition.varKey"
-              :effect="themes"
-              filterable
-              allow-create
-              default-first-option
-              clearable
-              :placeholder="t('visualization.var_name_placeholder')"
-              @change="onDisplayConditionChange"
-              size="small"
-            >
-              <el-option v-for="k in varKeyOptions" :key="k" :label="k" :value="k" />
-            </el-select>
-          </el-form-item>
-          <div style="margin-bottom: 10px; font-size: 12px; opacity: 0.8">
-            {{ t('visualization.var_true_show') }}
-          </div>
-          <el-form-item class="form-item" :class="'form-item-' + themes" style="margin-bottom: 8px">
-            <span style="display: inline-block; margin-bottom: 6px">{{
-              t('visualization.var_missing_strategy')
-            }}</span>
-            <el-radio-group
-              size="small"
-              v-model="element.displayCondition.emptyAs"
-              :effect="themes"
-              @change="onDisplayConditionChange"
-            >
-              <el-radio :effect="themes" label="hide">{{ t('visualization.hide') }}</el-radio>
-              <el-radio :effect="themes" label="show">{{ t('visualization.show') }}</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item class="form-item" :class="'form-item-' + themes" style="margin-bottom: 0">
-            <el-checkbox
-              :effect="themes"
-              size="small"
-              v-model="element.displayCondition.showClose"
-              @change="onDisplayConditionChange"
-            >
-              {{ t('visualization.show_close_button') }}
-            </el-checkbox>
-          </el-form-item>
-        </el-form>
+        <display-condition-setting
+          :themes="themes"
+          :element="element"
+          @change="onDisplayConditionChange"
+        />
       </collapse-switch-item>
       <collapse-switch-item
         v-if="element && borderSettingShow"

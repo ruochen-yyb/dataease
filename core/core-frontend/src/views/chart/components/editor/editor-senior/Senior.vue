@@ -35,18 +35,13 @@ import { XpackComponent } from '@/components/plugin'
 import CarouselSetting from '@/custom-component/common/CarouselSetting.vue'
 import { Icon } from 'vant'
 import CommonEvent from '@/custom-component/common/CommonEvent.vue'
+import DisplayConditionSetting from '@/custom-component/common/DisplayConditionSetting.vue'
+import { normalizeDisplayCondition } from '@/utils/visibilityCondition'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 
-const {
-  nowPanelTrackInfo,
-  nowPanelJumpInfo,
-  dvInfo,
-  curComponent,
-  batchOptStatus,
-  componentData,
-  canvasStyleData
-} = storeToRefs(dvMainStore)
+const { nowPanelTrackInfo, nowPanelJumpInfo, dvInfo, curComponent, batchOptStatus } =
+  storeToRefs(dvMainStore)
 
 const { t } = useI18n()
 const linkJumpRef = ref(null)
@@ -141,61 +136,23 @@ const eventsShow = computed(() => {
   )
 })
 
-// ===== 变量控制显隐（MVP：bool 变量，变量为 true 显示；编辑态仅配置，预览态生效）=====
+// ===== 显隐条件（支持交互变量与动态数据；编辑态仅配置，预览态生效）=====
 const visibilityByVarShow = computed(() => {
   return !batchOptStatus.value && dvInfo.value.type === 'dataV' && !!curComponent.value
 })
 
-// 兼容旧数据：补齐默认结构，避免 UI 报错
 watch(
   () => curComponent.value,
   c => {
-    if (!c) return
-    if (!c.displayCondition) {
-      c.displayCondition = {
-        enabled: false,
-        varKey: '',
-        emptyAs: 'hide',
-        showClose: true
-      }
-    } else {
-      c.displayCondition.enabled = !!c.displayCondition.enabled
-      c.displayCondition.varKey = c.displayCondition.varKey || ''
-      c.displayCondition.emptyAs = c.displayCondition.emptyAs || 'hide'
-      if (c.displayCondition.showClose === undefined) {
-        c.displayCondition.showClose = true
-      }
+    if (c) {
+      normalizeDisplayCondition(c)
     }
   },
   { immediate: true }
 )
 
-// 从页面引用的变量名中生成下拉候选（允许自由输入）
-const varKeyOptions = computed(() => {
-  const keys = new Set<string>()
-  // 画布全局默认变量
-  const globalVars = canvasStyleData.value?.runtimeBoolVarsDefault || {}
-  Object.keys(globalVars).forEach(k => keys.add(k))
-  const walk = (arr?: any[]) => {
-    if (!arr) return
-    arr.forEach(com => {
-      const dcKey = com?.displayCondition?.varKey
-      if (dcKey) keys.add(dcKey)
-      const evKey = com?.events?.setVar?.varKey
-      if (evKey) keys.add(evKey)
-      if (com?.component === 'Group') {
-        walk(com?.propValue)
-      } else if (com?.component === 'DeTabs') {
-        com?.propValue?.forEach(tabItem => walk(tabItem?.componentData))
-      }
-    })
-  }
-  walk(componentData.value)
-  return Array.from(keys).sort()
-})
-
 const onDisplayConditionChange = () => {
-  // 记录快照，保证配置可保存（编辑态不生效，预览态生效）
+  // 记录快照，保证显隐条件配置可保存。
   snapshotStore.recordSnapshotCacheToMobile('displayCondition')
 }
 
@@ -528,74 +485,20 @@ const removeJumpSenior = () => {
             :element="curComponent"
             :themes="themes"
           ></carousel-setting>
-          <!-- 显隐（变量控制）：变量为 true 显示；仅 dataV 预览态生效，编辑态用于配置 -->
+          <!-- 显隐条件：支持交互变量和动态数据；仅 dataV 预览态生效，编辑态用于配置 -->
           <collapse-switch-item
             v-if="visibilityByVarShow"
             :effect="themes"
             v-model="curComponent.displayCondition.enabled"
             @modelChange="onDisplayConditionChange"
-            :title="t('visualization.visibility_by_var')"
+            :title="t('visualization.visibility_condition')"
             name="displayCondition"
           >
-            <el-form label-position="top">
-              <el-form-item
-                class="form-item"
-                :class="'form-item-' + themes"
-                style="margin-bottom: 8px"
-              >
-                <span style="display: inline-block; margin-bottom: 6px">
-                  {{ t('visualization.var_name') }}
-                </span>
-                <el-select
-                  v-model="curComponent.displayCondition.varKey"
-                  :effect="themes"
-                  filterable
-                  allow-create
-                  default-first-option
-                  clearable
-                  :placeholder="t('visualization.var_name_placeholder')"
-                  @change="onDisplayConditionChange"
-                  size="small"
-                >
-                  <el-option v-for="k in varKeyOptions" :key="k" :label="k" :value="k" />
-                </el-select>
-              </el-form-item>
-              <div style="margin-bottom: 10px; font-size: 12px; opacity: 0.8">
-                {{ t('visualization.var_true_show') }}
-              </div>
-              <el-form-item
-                class="form-item"
-                :class="'form-item-' + themes"
-                style="margin-bottom: 8px"
-              >
-                <span style="display: inline-block; margin-bottom: 6px">
-                  {{ t('visualization.var_missing_strategy') }}
-                </span>
-                <el-radio-group
-                  size="small"
-                  v-model="curComponent.displayCondition.emptyAs"
-                  :effect="themes"
-                  @change="onDisplayConditionChange"
-                >
-                  <el-radio :effect="themes" label="hide">{{ t('visualization.hide') }}</el-radio>
-                  <el-radio :effect="themes" label="show">{{ t('visualization.show') }}</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item
-                class="form-item"
-                :class="'form-item-' + themes"
-                style="margin-bottom: 0"
-              >
-                <el-checkbox
-                  :effect="themes"
-                  size="small"
-                  v-model="curComponent.displayCondition.showClose"
-                  @change="onDisplayConditionChange"
-                >
-                  {{ t('visualization.show_close_button') }}
-                </el-checkbox>
-              </el-form-item>
-            </el-form>
+            <display-condition-setting
+              :themes="themes"
+              :element="curComponent"
+              @change="onDisplayConditionChange"
+            />
           </collapse-switch-item>
           <el-collapse-item
             :effect="themes"
@@ -612,74 +515,20 @@ const removeJumpSenior = () => {
     <div @keydown.stop @keyup.stop class="attr-style" v-if="noSenior">
       <el-row class="de-collapse-style">
         <el-collapse v-model="state.attrActiveNames" class="style-collapse">
-          <!-- 显隐（变量控制）：变量为 true 显示；仅 dataV 预览态生效，编辑态用于配置 -->
+          <!-- 显隐条件：支持交互变量和动态数据；仅 dataV 预览态生效，编辑态用于配置 -->
           <collapse-switch-item
             v-if="visibilityByVarShow"
             :effect="themes"
             v-model="curComponent.displayCondition.enabled"
             @modelChange="onDisplayConditionChange"
-            :title="t('visualization.visibility_by_var')"
+            :title="t('visualization.visibility_condition')"
             name="displayCondition"
           >
-            <el-form label-position="top">
-              <el-form-item
-                class="form-item"
-                :class="'form-item-' + themes"
-                style="margin-bottom: 8px"
-              >
-                <span style="display: inline-block; margin-bottom: 6px">
-                  {{ t('visualization.var_name') }}
-                </span>
-                <el-select
-                  v-model="curComponent.displayCondition.varKey"
-                  :effect="themes"
-                  filterable
-                  allow-create
-                  default-first-option
-                  clearable
-                  :placeholder="t('visualization.var_name_placeholder')"
-                  @change="onDisplayConditionChange"
-                  size="small"
-                >
-                  <el-option v-for="k in varKeyOptions" :key="k" :label="k" :value="k" />
-                </el-select>
-              </el-form-item>
-              <div style="margin-bottom: 10px; font-size: 12px; opacity: 0.8">
-                {{ t('visualization.var_true_show') }}
-              </div>
-              <el-form-item
-                class="form-item"
-                :class="'form-item-' + themes"
-                style="margin-bottom: 8px"
-              >
-                <span style="display: inline-block; margin-bottom: 6px">
-                  {{ t('visualization.var_missing_strategy') }}
-                </span>
-                <el-radio-group
-                  size="small"
-                  v-model="curComponent.displayCondition.emptyAs"
-                  :effect="themes"
-                  @change="onDisplayConditionChange"
-                >
-                  <el-radio :effect="themes" label="hide">{{ t('visualization.hide') }}</el-radio>
-                  <el-radio :effect="themes" label="show">{{ t('visualization.show') }}</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item
-                class="form-item"
-                :class="'form-item-' + themes"
-                style="margin-bottom: 0"
-              >
-                <el-checkbox
-                  :effect="themes"
-                  size="small"
-                  v-model="curComponent.displayCondition.showClose"
-                  @change="onDisplayConditionChange"
-                >
-                  {{ t('visualization.show_close_button') }}
-                </el-checkbox>
-              </el-form-item>
-            </el-form>
+            <display-condition-setting
+              :themes="themes"
+              :element="curComponent"
+              @change="onDisplayConditionChange"
+            />
           </collapse-switch-item>
           <el-collapse-item
             :effect="themes"

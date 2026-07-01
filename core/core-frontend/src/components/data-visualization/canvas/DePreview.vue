@@ -23,9 +23,9 @@ import LinkOptBar from '@/components/data-visualization/canvas/LinkOptBar.vue'
 import { isDesktop } from '@/utils/ModelUtil'
 import { isMobile } from '@/utils/utils'
 import { useI18n } from '@/hooks/web/useI18n'
+import { resolveComponentVisible } from '@/utils/visibilityCondition'
 const dvMainStore = dvMainStoreWithOut()
-const { pcMatrixCount, curComponent, mobileInPc, canvasState, inMobile, lastRuntimeVarChange } =
-  storeToRefs(dvMainStore)
+const { pcMatrixCount, curComponent, mobileInPc, canvasState, inMobile } = storeToRefs(dvMainStore)
 const openHandler = ref(null)
 const customDatasetParamsRef = ref(null)
 const emits = defineEmits(['onResetLayout'])
@@ -141,51 +141,14 @@ const dashboardActive = computed(() => {
 
 // 交互变量：仅 dataV 预览态使用（编辑态忽略条件）
 const runtimeVars = computed(() => dvMainStore.getRuntimeVars(dvInfo.value.id))
-// 记录上一次已打印的（componentId -> at），避免 finalShow 频繁执行导致刷屏
-const lastShowLogAtMap = new Map<string, number>()
+// 统一显隐条件：兼容交互变量和动态数据结果。
 const finalShow = item => {
-  if (!item?.isShow) return false
-  // 仅 dataV 预览态生效（MVP）：包含编辑器预览 edit-preview
-  if (dvInfo.value.type !== 'dataV' || !showPosition.value.includes('preview')) return true
-  const dc = item?.displayCondition
-  if (!dc?.enabled || !dc?.varKey) return true
-  const v = runtimeVars.value?.[dc.varKey]
-  if (v === undefined) {
-    const res = (dc.emptyAs || 'hide') === 'show'
-    const last = lastRuntimeVarChange.value
-    if (last && last.dvId === dvInfo.value.id + '' && last.key === dc.varKey) {
-      const prevAt = lastShowLogAtMap.get(item.id)
-      if (prevAt !== last.at) {
-        lastShowLogAtMap.set(item.id, last.at)
-        console.info('[DE][runtimeVar][finalShow]', {
-          componentId: item.id,
-          varKey: dc.varKey,
-          value: undefined,
-          emptyAs: dc.emptyAs || 'hide',
-          result: res,
-          lastChange: last
-        })
-      }
-    }
-    return res
-  }
-  // 变量固定为 bool，规则固定为 true 显示
-  const res = v === true
-  const last = lastRuntimeVarChange.value
-  if (last && last.dvId === dvInfo.value.id + '' && last.key === dc.varKey) {
-    const prevAt = lastShowLogAtMap.get(item.id)
-    if (prevAt !== last.at) {
-      lastShowLogAtMap.set(item.id, last.at)
-      console.info('[DE][runtimeVar][finalShow]', {
-        componentId: item.id,
-        varKey: dc.varKey,
-        value: v,
-        result: res,
-        lastChange: last
-      })
-    }
-  }
-  return res
+  return resolveComponentVisible(item, {
+    dvInfo: dvInfo.value,
+    showPosition: showPosition.value,
+    runtimeVars: runtimeVars.value,
+    getViewDataDetails: viewId => dvMainStore.getViewDataDetails(viewId)
+  })
 }
 const state = reactive({
   initState: true,

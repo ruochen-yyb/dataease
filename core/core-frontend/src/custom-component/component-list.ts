@@ -251,12 +251,24 @@ export const commonAttr = {
   isShow: true, // 是否显示组件
   dashboardHidden: false, // 仪表板组件隐藏
   category: 'base', //组件类型 base 基础组件 hidden隐藏组件
-  // 变量控制显隐（MVP: bool 变量，变量为 true 显示；编辑态忽略，仅预览态生效）
+  // 显隐条件：兼容交互变量，并支持按动态数据结果控制。
   displayCondition: {
     enabled: false,
+    sourceType: 'runtimeVar',
     varKey: '',
     emptyAs: 'hide', // 'show' | 'hide'；变量缺失时策略
-    showClose: true // 显示时右上角“关闭”按钮（点击取反变量）
+    showClose: true, // 显示时右上角“关闭”按钮（点击取反变量）
+    dataset: {
+      sourceViewId: '',
+      fieldId: '',
+      fieldName: '',
+      fieldKey: '',
+      rowIndex: 0,
+      aggregate: 'first',
+      operator: 'eq',
+      valueType: 'string',
+      compareValue: ''
+    }
   },
   // 当前组件动作
   dragging: false,
